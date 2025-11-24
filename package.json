@@ -1,0 +1,47 @@
+{
+  "name": "news-bulletin-generator",
+  "version": "1.0.0",
+  "description": "Automated news bulletin generator using n8n, Ollama, ComfyUI, and ElevenLabs",
+  "main": "index.js",
+  "scripts": {
+    "setup": "chmod +x setup.sh && ./setup.sh",
+    "test": "chmod +x test-setup.sh && ./test-setup.sh",
+    "start": "chmod +x start-services.sh && ./start-services.sh",
+    "validate": "node validate-workflow.js",
+    "clean": "rm -rf generated_assets/* final_bulletins/* logs/* temp/*"
+  },
+  "keywords": [
+    "n8n",
+    "news",
+    "bulletin",
+    "automation",
+    "ai",
+    "video",
+    "comfyui",
+    "ollama",
+    "elevenlabs"
+  ],
+  "author": "News Bulletin Generator",
+  "license": "MIT",
+  "dependencies": {
+    "xml2js": "^0.6.2",
+    "axios": "^1.6.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.54.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/news-bulletin-generator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/news-bulletin-generator/issues"
+  },
+  "homepage": "https://github.com/your-org/news-bulletin-generator#readme"
+}

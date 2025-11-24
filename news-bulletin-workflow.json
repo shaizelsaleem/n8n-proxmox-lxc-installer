@@ -1,0 +1,482 @@
+{
+  "name": "Automated News Bulletin Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "trigger-scheduler",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "find /home/engine/project/xml_news_wires -name '*.xml' -type f -mmin -30 | head -10"
+      },
+      "id": "fetch-xml-files",
+      "name": "Fetch XML News Files",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse XML file paths and prepare for processing\nconst xmlFiles = $input.all().map(item => {\n  const filePath = item.json.stdout.trim();\n  if (filePath) {\n    return {\n      json: {\n        filePath: filePath,\n        fileName: filePath.split('/').pop(),\n        processed: false\n      }\n    };\n  }\n}).filter(item => item);\n\nreturn xmlFiles;"
+      },
+      "id": "parse-file-paths",
+      "name": "Parse File Paths",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "cat {{ $json.filePath }}"
+      },
+      "id": "read-xml-content",
+      "name": "Read XML Content",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse XML news content\nconst xml2js = require('xml2js');\nconst parser = new xml2js.Parser();\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  try {\n    const xmlContent = item.json.stdout;\n    const parsed = await parser.parseStringPromise(xmlContent);\n    \n    // Extract news items (adjust based on your XML structure)\n    const newsItems = parsed.news?.item || parsed.rss?.channel?.[0]?.item || [];\n    \n    for (const newsItem of newsItems) {\n      results.push({\n        json: {\n          title: newsItem.title?.[0] || '',\n          description: newsItem.description?.[0] || newsItem.summary?.[0] || '',\n          pubDate: newsItem.pubDate?.[0] || newsItem.published?.[0] || '',\n          category: newsItem.category?.[0] || '',\n          filePath: $json.filePath,\n          media: newsItem.enclosure || newsItem.media?.content || []\n        }\n      });\n    }\n  } catch (error) {\n    console.error('Error parsing XML:', error);\n  }\n}\n\nreturn results;"
+      },
+      "id": "parse-xml-news",
+      "name": "Parse XML News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "find /home/engine/project/supporting_media -name '*{{ $json.title.split(' ').slice(0,3).join(' ') }}*' -o -name '*{{ $json.category }}*' | head -5"
+      },
+      "id": "find-supporting-media",
+      "name": "Find Supporting Media",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine news data with supporting media\nconst results = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const newsItem = $input.all()[i].json;\n  const mediaSearch = $('Find Supporting Media').all()[i].json.stdout;\n  \n  const mediaFiles = mediaSearch.trim().split('\\n').filter(file => file.trim());\n  \n  // Select anchor image (first image file)\n  const anchorImage = mediaFiles.find(file => file.match(/\\.(jpg|jpeg|png|gif)$/i)) || '';\n  \n  results.push({\n    json: {\n      ...newsItem,\n      supportingMedia: mediaFiles,\n      anchorImage: anchorImage,\n      hasMedia: mediaFiles.length > 0\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "combine-news-media",
+      "name": "Combine News with Media",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "qwen2.5"
+            },
+            {
+              "name": "prompt",
+              "value": "You are a news bulletin script writer. Create a short, engaging news bulletin script (30-60 seconds) based on the following information:\n\nTitle: {{ $json.title }}\nDescription: {{ $json.description }}\nCategory: {{ $json.category }}\n\nRequirements:\n1. Make it conversational and engaging\n2. Include a strong opening hook\n3. Keep it concise and impactful\n4. End with a memorable closing\n5. Include visual cues for video production in [brackets]\n\nScript:"
+            },
+            {
+              "name": "stream",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-script-ollama",
+      "name": "Generate Script (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Ollama response and prepare for audio generation\nconst results = [];\n\nfor (const item of $input.all()) {\n  try {\n    const response = JSON.parse(item.json.body);\n    const script = response.response || '';\n    \n    // Clean up the script\n    const cleanScript = script.replace(/\\[.*?\\]/g, '').trim();\n    \n    results.push({\n      json: {\n        ...$('Combine News with Media').all()[0].json,\n        aiScript: script,\n        cleanScript: cleanScript,\n        scriptLength: cleanScript.length\n      }\n    });\n  } catch (error) {\n    console.error('Error parsing Ollama response:', error);\n  }\n}\n\nreturn results;"
+      },
+      "id": "parse-script-response",
+      "name": "Parse Script Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/{{ $vars.ELEVENLABS_VOICE_ID }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "elevenLabsApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "xi-api-key",
+              "value": "={{ $vars.ELEVENLABS_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "{{ $json.cleanScript }}"
+            },
+            {
+              "name": "voice_settings",
+              "value": "={\"stability\": 0.75, \"similarity_boost\": 0.75}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "generate-audio-elevenlabs",
+      "name": "Generate Audio (ElevenLabs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "mkdir -p /home/engine/project/generated_assets/{{ $json.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) }} && echo '{{ $json.anchorImage }}' > /home/engine/project/generated_assets/{{ $json.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) }}/anchor_image.txt"
+      },
+      "id": "prepare-workspace",
+      "name": "Prepare Workspace",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8188/prompt",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "prompt",
+              "value": "={\"prompt\": \"Create a news video from the anchor image with the following settings:\", \"workflow\": {\"nodes\": {\"image_loader\": {\"inputs\": {\"image\": \"{{ $json.anchorImage }}\"}}, \"audio_loader\": {\"inputs\": {\"audio\": \"{{ $json.audioPath }}\"}}, \"video_generator\": {\"inputs\": {\"duration\": 30, \"fps\": 30}}}}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-video-comfyui",
+      "name": "Generate Video (ComfyUI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare final assembly data\nconst results = [];\n\nfor (const item of $input.all()) {\n  const newsData = $('Parse Script Response').all()[0].json;\n  const audioPath = `/home/engine/project/generated_assets/${newsData.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}/audio.mp3`;\n  const videoPath = `/home/engine/project/generated_assets/${newsData.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}/video.mp4`;\n  \n  results.push({\n    json: {\n      ...newsData,\n      audioPath: audioPath,\n      videoPath: videoPath,\n      outputPath: `/home/engine/project/final_bulletins/${newsData.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_bulletin.mp4`\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "prepare-assembly-data",
+      "name": "Prepare Assembly Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "mkdir -p /home/engine/project/final_bulletins && ffmpeg -i {{ $json.videoPath }} -i {{ $json.audioPath }} -i {{ $json.supportingMedia[0] }} -filter_complex \"[0:v][1:a]concat=v=1:a=1[v][a];[v][a]concat=n=1:v=1:a=1[out]\" -map \"[out]\" {{ $json.outputPath }}"
+      },
+      "id": "assemble-final-bulletin",
+      "name": "Assemble Final Bulletin",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final cleanup and notification\nconst results = [];\n\nfor (const item of $input.all()) {\n  const bulletinData = $('Prepare Assembly Data').all()[0].json;\n  \n  results.push({\n    json: {\n      status: 'completed',\n      title: bulletinData.title,\n      outputPath: bulletinData.outputPath,\n      timestamp: new Date().toISOString(),\n      duration: bulletinData.scriptLength\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "final-cleanup",
+      "name": "Final Cleanup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "message": "🎬 News Bulletin Generated Successfully!\n\n📰 Title: {{ $json.title }}\n📹 Output: {{ $json.outputPath }}\n⏰ Generated: {{ $json.timestamp }}\n⏱️ Duration: {{ $json.duration }} chars\n\nReady for broadcast!"
+      },
+      "id": "notification",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3540,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch XML News Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch XML News Files": {
+      "main": [
+        [
+          {
+            "node": "Parse File Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse File Paths": {
+      "main": [
+        [
+          {
+            "node": "Read XML Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read XML Content": {
+      "main": [
+        [
+          {
+            "node": "Parse XML News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse XML News": {
+      "main": [
+        [
+          {
+            "node": "Find Supporting Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Supporting Media": {
+      "main": [
+        [
+          {
+            "node": "Combine News with Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine News with Media": {
+      "main": [
+        [
+          {
+            "node": "Generate Script (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Script (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Parse Script Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Script Response": {
+      "main": [
+        [
+          {
+            "node": "Generate Audio (ElevenLabs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Audio (ElevenLabs)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Workspace",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Workspace": {
+      "main": [
+        [
+          {
+            "node": "Generate Video (ComfyUI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Video (ComfyUI)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Assembly Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Assembly Data": {
+      "main": [
+        [
+          {
+            "node": "Assemble Final Bulletin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Final Bulletin": {
+      "main": [
+        [
+          {
+            "node": "Final Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Cleanup": {
+      "main": [
+        [
+          {
+            "node": "Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-11-24T10:00:00.000Z",
+  "versionId": "1"
+}

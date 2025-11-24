@@ -1,0 +1,128 @@
+# .gitignore for News Bulletin Generator
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Generated assets
+/generated_assets/
+/final_bulletins/
+/logs/
+/temp/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ComfyUI
+ComfyUI/custom_nodes/*/
+!ComfyUI/custom_nodes/.gitkeep
+ComfyUI/models/
+ComfyUI/input/
+ComfyUI/output/
+
+# Ollama
+.ollama/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Media files (keep samples, ignore generated)
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Keep sample files but ignore user content
+!xml_news_wires/sample_news.xml
+!xml_news_wires/README.md
+!supporting_media/README.md
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# n8n
+.n8n/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test files
+test_*.xml
+test_*.mp4
+test_*.mp3
+
+# Configuration overrides
+config.local.json
+settings.local.json
